@@ -1,9 +1,9 @@
 [package]
-name = ""
+name = "safe-financial-math"
 version = "0.0.1"
-description = ""
-repository = "https://github.com/research-ag/..."
-keywords = [ ]
+description = "Safe fixed-point financial math: precision-safe Nat-by-Float multiplication and decimal scaling for token/price arithmetic."
+repository = "https://github.com/research-ag/safe-financial-math"
+keywords = [ "math", "float", "finance", "fixed-point", "token" ]
 license = "Apache-2.0"
 
 [dependencies]
