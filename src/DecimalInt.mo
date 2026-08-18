@@ -130,7 +130,10 @@ module {
   ///
   /// Never traps.
   public func mul(self : DecimalInt, other : DecimalInt) : DecimalInt {
-    { value = self.value * other.value; decimals = self.decimals + other.decimals };
+    {
+      value = self.value * other.value;
+      decimals = self.decimals + other.decimals;
+    };
   };
 
   /// Returns the additive inverse `-a`, preserving the scale.

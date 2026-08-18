@@ -137,7 +137,10 @@ module {
   ///
   /// Never traps.
   public func mul(self : DecimalNat, other : DecimalNat) : DecimalNat {
-    { value = self.value * other.value; decimals = self.decimals + other.decimals };
+    {
+      value = self.value * other.value;
+      decimals = self.decimals + other.decimals;
+    };
   };
 
   /// Compares `a` and `b` by their real value, returning an `Order.Order`.
