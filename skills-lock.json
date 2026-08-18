@@ -25,6 +25,12 @@
       "skillPath": "skills/doc-strings/SKILL.md",
       "computedHash": "94037db6af196ee9386d069960157e0295100848d1038a46efe6169defddb373"
     },
+    "motoko-dot-notation-migration": {
+      "source": "research-ag/motoko-skills",
+      "sourceType": "github",
+      "skillPath": "skills/dot-notation-migration/SKILL.md",
+      "computedHash": "6ec669f5fa866459af7aba47eb532b2611e5bc96e489dbfef16e2c16a9892b24"
+    },
     "motoko-general-style-guidelines": {
       "source": "research-ag/motoko-skills",
       "sourceType": "github",

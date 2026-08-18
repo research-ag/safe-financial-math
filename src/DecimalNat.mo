@@ -51,12 +51,12 @@ module {
   ///
   /// The caller must ensure `target >= d.decimals` so that the exponent is
   /// non-negative and the rescaling is exact (no digits are dropped).
-  func rescaleValue_(d : DecimalNat, target : Int) : Nat {
-    let shift = target - d.decimals;
+  func rescaleValue_(self : DecimalNat, target : Int) : Nat {
+    let shift = target - self.decimals;
     if (shift > 0) {
-      d.value * pow10(Int.abs(shift));
+      self.value * pow10(Int.abs(shift));
     } else if (shift == 0) {
-      d.value;
+      self.value;
     } else {
       Runtime.trap("DecimalNat.rescaleValue_: target decimals must be >= d.decimals");
     };
@@ -98,10 +98,10 @@ module {
   /// ```
   ///
   /// Never traps.
-  public func add(a : DecimalNat, b : DecimalNat) : DecimalNat {
-    let target = Int.max(a.decimals, b.decimals);
+  public func add(self : DecimalNat, other : DecimalNat) : DecimalNat {
+    let target = Int.max(self.decimals, other.decimals);
     {
-      value = rescaleValue_(a, target) + rescaleValue_(b, target);
+      value = rescaleValue_(self, target) + rescaleValue_(other, target);
       decimals = target;
     };
   };
@@ -117,10 +117,10 @@ module {
   /// ```
   ///
   /// Traps if the result underflows.
-  public func sub(a : DecimalNat, b : DecimalNat) : DecimalNat {
-    let target = Int.max(a.decimals, b.decimals);
+  public func sub(self : DecimalNat, other : DecimalNat) : DecimalNat {
+    let target = Int.max(self.decimals, other.decimals);
     {
-      value = rescaleValue_(a, target) - rescaleValue_(b, target);
+      value = rescaleValue_(self, target) - rescaleValue_(other, target);
       decimals = target;
     };
   };
@@ -136,8 +136,8 @@ module {
   /// ```
   ///
   /// Never traps.
-  public func mul(a : DecimalNat, b : DecimalNat) : DecimalNat {
-    { value = a.value * b.value; decimals = a.decimals + b.decimals };
+  public func mul(self : DecimalNat, other : DecimalNat) : DecimalNat {
+    { value = self.value * other.value; decimals = self.decimals + other.decimals };
   };
 
   /// Compares `a` and `b` by their real value, returning an `Order.Order`.
@@ -151,9 +151,9 @@ module {
   /// ```
   ///
   /// Never traps.
-  public func compare(a : DecimalNat, b : DecimalNat) : Order.Order {
-    let target = Int.max(a.decimals, b.decimals);
-    Nat.compare(rescaleValue_(a, target), rescaleValue_(b, target));
+  public func compare(self : DecimalNat, other : DecimalNat) : Order.Order {
+    let target = Int.max(self.decimals, other.decimals);
+    Nat.compare(rescaleValue_(self, target), rescaleValue_(other, target));
   };
 
   /// Returns `true` when `a` and `b` denote the same real number.
@@ -161,8 +161,8 @@ module {
   /// Equality is by value, not by representation, so `(100, 2)` equals `(1, 0)`.
   ///
   /// Never traps.
-  public func equal(a : DecimalNat, b : DecimalNat) : Bool {
-    compare(a, b) == #equal;
+  public func equal(self : DecimalNat, other : DecimalNat) : Bool {
+    compare(self, other) == #equal;
   };
 
   /// Rounds `d` to the nearest integer and returns it as an `Nat`.
@@ -178,14 +178,14 @@ module {
   /// ```
   ///
   /// Never traps.
-  public func round(d : DecimalNat) : Nat {
-    if (d.decimals <= 0) {
+  public func round(self : DecimalNat) : Nat {
+    if (self.decimals <= 0) {
       // No fractional part: value * 10 ** (-decimals) is already an integer.
-      d.value * pow10(Int.abs(d.decimals));
+      self.value * pow10(Int.abs(self.decimals));
     } else {
-      let scale = pow10(Int.abs(d.decimals));
-      let quotient = d.value / scale;
-      let remainder = d.value % scale;
+      let scale = pow10(Int.abs(self.decimals));
+      let quotient = self.value / scale;
+      let remainder = self.value % scale;
       if (2 * remainder >= scale) quotient + 1 else quotient;
     };
   };
@@ -202,8 +202,8 @@ module {
   /// ```
   ///
   /// Never traps.
-  public func toFloat(d : DecimalNat) : Float {
-    Float.fromInt(d.value) / Float.pow(10.0, Float.fromInt(d.decimals));
+  public func toFloat(self : DecimalNat) : Float {
+    Float.fromInt(self.value) / Float.pow(10.0, Float.fromInt(self.decimals));
   };
 
   /// Renders `d` as a base-ten decimal string.
@@ -221,13 +221,13 @@ module {
   /// ```
   ///
   /// Never traps.
-  public func toText(d : DecimalNat) : Text {
-    if (d.decimals <= 0) {
-      Nat.toText(d.value) # zeros_(Int.abs(d.decimals));
+  public func toText(self : DecimalNat) : Text {
+    if (self.decimals <= 0) {
+      Nat.toText(self.value) # zeros_(Int.abs(self.decimals));
     } else {
-      let fractionalDigits = Int.abs(d.decimals);
+      let fractionalDigits = Int.abs(self.decimals);
       let scale = pow10(fractionalDigits);
-      let magnitude = Int.abs(d.value);
+      let magnitude = Int.abs(self.value);
       let integerPart = magnitude / scale;
       let fractionalPart = magnitude % scale;
       let fractionalText = padLeft(Nat.toText(fractionalPart), fractionalDigits);

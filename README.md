@@ -57,6 +57,9 @@ module {
   // Multiplies value by multiplier, flooring the result (safe payout amount).
   public func multiplyNatByFloatMin(value : Nat, multiplier : Float) : Nat;
 
+  // Converts value to Float after truncating unrepresentable low-order bits.
+  public func intToFloatFloor(value : Nat) : Float;
+
   // Multiplies value by multiplier, ceiling the result (safe required amount).
   public func multiplyNatByFloatMax(value : Nat, multiplier : Float) : Nat;
 
@@ -204,12 +207,12 @@ npx -y prettier --plugin prettier-plugin-motoko --check '**/*.{mo,json,md}'
 
 ## Design
 
-The `multiplyNatByFloatMin` function solves the precision problem by
-right-shifting `value` until it fits into 53 bits, converting to `Float` and
-multiplying there, flooring, converting back to `Nat`, and finally re-applying
-the same left shift to the result. This keeps the discarded low-order bits from
-inflating the product, guaranteeing the result is at most the exact
-mathematical product.
+The `intToFloatFloor` function solves the precision problem by right-shifting
+`value` until it fits into 53 bits, then left-shifting the truncated value back
+before converting it to `Float`. This ensures conversion cannot round the
+integer up. `multiplyNatByFloatMin` uses this lower conversion before applying
+the multiplier, guaranteeing the result is at most the exact mathematical
+product.
 
 `multiplyNatByFloatMax` performs the ceiling multiplication directly; the
 ceiling direction already errs on the safe side for amounts that must be

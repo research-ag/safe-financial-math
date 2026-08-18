@@ -4,6 +4,14 @@ import Float "mo:core/Float";
 import FinancialMath "../src/lib";
 
 test(
+  "intToFloatFloor: truncates values above Float precision",
+  func() {
+    let value : Nat = 1_152_921_504_606_846_977; // 2 ** 60 + 1
+    assert FinancialMath.intToFloatFloor(value) == 1_152_921_504_606_846_976.0;
+  },
+);
+
+test(
   "multiplyNatByFloatMin: basic flooring",
   func() {
     assert FinancialMath.multiplyNatByFloatMin(4_000, 0.0125) == 50;
@@ -31,6 +39,9 @@ test(
     let big : Nat = 1_152_921_504_606_846_976; // 2 ** 60
     // Multiplying by 1.0 must return exactly the same value, not a rounded one.
     assert FinancialMath.multiplyNatByFloatMin(big, 1.0) == big;
+    // Shift the value before multiplying, so flooring does not discard a
+    // larger-than-necessary amount after the multiplier has been applied.
+    assert FinancialMath.multiplyNatByFloatMin(big, 0.5) == 576_460_752_303_423_488; // 2 ** 59
   },
 );
 

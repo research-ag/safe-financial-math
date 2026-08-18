@@ -27,6 +27,23 @@ import Int "mo:core/Int";
 
 module {
 
+  /// Converts a `Nat` to a `Float`, truncating the integer first when it is
+  /// larger than the 53-bit mantissa can represent.
+  ///
+  /// The truncation is performed by shifting right until the value fits,
+  /// then shifting left again before the conversion. This makes the returned
+  /// floating-point value correspond to a lower integer rather than allowing
+  /// the conversion to round the value up.
+  public func intToFloatFloor(value : Nat) : Float {
+    var high = Prim.shiftRight(value, 53);
+    var shift : Nat32 = 0;
+    while (high != 0) {
+      high := Prim.shiftRight(high, 1);
+      shift += 1;
+    };
+    Prim.intToFloat(Prim.shiftLeft(Prim.shiftRight(value, shift), shift));
+  };
+
   /// Multiplies a `Nat` `value` by a `Float` `multiplier` and returns the
   /// floored result as a `Nat`, compensating for IEEE 754 precision loss.
   ///
@@ -37,9 +54,9 @@ module {
   ///
   /// Because `Float` only has a 53-bit mantissa, an integer larger than
   /// `2 ** 53` cannot be converted to `Float` exactly and is rounded up. To
-  /// avoid this, `value` is first right-shifted until it fits into 53 bits, then
-  /// multiplied and floored, and finally the same shift is re-applied to the
-  /// result. This keeps the low-order bits from inflating the product.
+  /// avoid this, `value` is truncated to a representable lower integer before
+  /// it is converted and multiplied. This keeps the low-order bits from
+  /// inflating the product.
   ///
   /// Example:
   /// ```motoko include=import
@@ -53,28 +70,9 @@ module {
   /// Traps if `multiplier` is `NaN` or infinite (the intermediate
   /// float-to-integer conversion is undefined for those values).
   public func multiplyNatByFloatMin(value : Nat, multiplier : Float) : Nat {
-    // The precision problem: converting a Nat larger than 53 bits to Float
-    // rounds up, so we shift the value right until it fits into 53 bits, then
-    // denominate, then shift the result back left.
-    var high = Prim.shiftRight(value, 53);
-    var shift : Nat32 = 0;
-    var fixedValue = value;
-    while (high != 0) {
-      high := Prim.shiftRight(high, 1);
-      shift += 1;
-    };
-    if (shift > 0) {
-      fixedValue := Prim.shiftRight(value, shift);
-    };
-
-    var result = multiplier * Prim.intToFloat(fixedValue)
+    multiplier * intToFloatFloor(value)
     |> Prim.floatFloor(_)
     |> Prim.abs(Prim.floatToInt(_));
-
-    if (shift > 0) {
-      result := Prim.shiftLeft(result, shift);
-    };
-    result;
   };
 
   /// Multiplies a `Nat` `value` by a `Float` `multiplier` and returns the
