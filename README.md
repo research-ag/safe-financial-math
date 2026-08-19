@@ -35,18 +35,18 @@ For updates, help, questions, feedback and other requests related to this packag
 
 A Motoko `Float` is a 64-bit IEEE 754 double with a 53-bit mantissa. Any integer
 larger than `2 ** 53` cannot be represented exactly, so a naive
-`Float.fromInt(value) * price` can silently round a token amount **up** before
-the multiplication even happens. In a financial setting this is dangerous:
-rounding a payout up means a canister can pay out more than it took in and drain
-its own reserves.
+`Float.fromInt(value) * price` rounds to nearest twice — once when converting
+the token amount and once when multiplying — and either rounding can go in the
+unsafe direction. In a financial setting this is dangerous: rounding a payout up
+means a canister can pay out more than it took in and drain its own reserves.
 
 This package makes the rounding direction explicit and bounds it safely:
 
 - multiply-and-**floor** for amounts you pay out (never overpay), and
 - multiply-and-**ceil** for amounts you collect or require (never undercharge),
 
-while transparently shifting large `Nat` values below the 53-bit mantissa limit
-before converting to `Float` and shifting the result back afterwards.
+by evaluating the product in exact, unbounded integer arithmetic instead of in
+floating point, so the bound holds for operands of any magnitude.
 
 ### Interface
 
@@ -147,8 +147,9 @@ import FinancialMath "mo:safe-financial-math";
 let payout = FinancialMath.multiplyNatByFloatMin(4_000, 0.0125); // 50
 
 // Use the ceiling variant for a required deposit so the canister never
-// undercharges.
-let required = FinancialMath.multiplyNatByFloatMax(4_000, 0.0125); // 50
+// undercharges. The closest double to 0.0125 is 0.012500000000000000693..., so
+// the exact product is 50.000000000000002775... and the ceiling is 51.
+let required = FinancialMath.multiplyNatByFloatMax(4_000, 0.0125); // 51
 
 // Convert a human price into a token's raw integer scale (8 decimals).
 let scaled = FinancialMath.scaleFloat(0.0125, 8); // 1_250_000.0
@@ -207,16 +208,27 @@ npx -y prettier --plugin prettier-plugin-motoko --check '**/*.{mo,json,md}'
 
 ## Design
 
-The `intToFloatFloor` function solves the precision problem by right-shifting
-`value` until it fits into 53 bits, then left-shifting the truncated value back
-before converting it to `Float`. This ensures conversion cannot round the
-integer up. `multiplyNatByFloatMin` uses this lower conversion before applying
-the multiplier, guaranteeing the result is at most the exact mathematical
-product.
+`multiplyNatByFloatMin` and `multiplyNatByFloatMax` do not multiply in floating
+point at all. Every finite `Float` is a dyadic rational, i.e. it denotes exactly
+`numerator / 2 ** k` for some integers `numerator` and `k`, and that pair can be
+recovered without losing a bit by doubling the `Float` until it becomes integral.
+The functions then compute `value * numerator` and divide by `2 ** k` on
+unbounded `Nat`s, rounding the quotient down (`Min`) or up (`Max`). Both results
+are therefore exact bounds on the mathematical product for operands of any
+magnitude, whereas a `Float` multiplication rounds its result to nearest and so
+can land on the wrong side of the product as soon as the product exceeds
+`2 ** 53`.
 
-`multiplyNatByFloatMax` performs the ceiling multiplication directly; the
-ceiling direction already errs on the safe side for amounts that must be
-collected.
+Note that the bound is on the product of `value` and the `Float`'s own value,
+which is itself only the closest double to the decimal a caller writes: `0.0125`
+denotes `0.012500000000000000693...`, so `multiplyNatByFloatMax(4_000, 0.0125)`
+is `51`, not `50`. Reach for `DecimalNat`/`DecimalInt` when the multiplier itself
+must be an exact decimal.
+
+`intToFloatFloor` is a standalone helper for the reverse direction — getting a
+`Nat` into a `Float` without the conversion rounding it up. It right-shifts
+`value` until it fits into 53 bits and left-shifts the truncated value back
+before converting, so the resulting `Float` is at most `value`.
 
 `scaleFloat` is a thin, total helper around `Float.pow(10.0, decimals)` for
 converting between a token's raw integer scale and human-scale values.
@@ -236,8 +248,7 @@ approximate quotient is needed.
 ## Implementation notes
 
 - `multiplyNatByFloatMin` and `multiplyNatByFloatMax` trap if `multiplier` is
-  `NaN` or infinite (the intermediate float-to-integer conversion is undefined
-  for those values).
+  `NaN` or infinite (neither denotes a rational number).
 - A negative `multiplier` returns the absolute value of the rounded product.
 - `scaleFloat` never traps.
 - In the `DecimalInt` module every operation is total. In `DecimalNat` every
