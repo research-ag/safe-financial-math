@@ -178,6 +178,71 @@ module {
     compare(self, other) == #equal;
   };
 
+  /// Rounds `d` down to the nearest integer and returns it as an `Int`.
+  ///
+  /// A decimal with `decimals <= 0` already denotes an integer and is
+  /// returned exactly (scaled up by the trailing zeros) without any rounding.
+  ///
+  /// Example:
+  /// ```motoko include=import
+  /// let r = DecimalInt.floor(DecimalInt.new(125, 2)); // 1 (1.25 rounds to 1)
+  /// let s = DecimalInt.floor(DecimalInt.new(-175, 2)); // -2 (-1.75 rounds to -2)
+  /// ```
+  ///
+  /// Never traps.
+  public func floor(self : DecimalInt) : Int {
+    if (self.decimals <= 0) {
+      // No fractional part: value * 10 ** (-decimals) is already an integer.
+      self.value * pow10(Int.abs(self.decimals));
+    } else {
+      let scale = pow10(Int.abs(self.decimals));
+      let magnitude = Int.abs(self.value);
+      let quotient = magnitude / scale;
+      let remainder = magnitude % scale;
+      // The division truncates towards zero, so a negative value with a
+      // fractional part needs one more step away from zero to reach the floor.
+      if (self.value < 0) {
+        if (remainder > 0) -(quotient + 1) else -quotient;
+      } else {
+        quotient;
+      };
+    };
+  };
+
+  /// Rounds `d` up to the nearest integer and returns it as an `Int`.
+  ///
+  /// A decimal with `decimals <= 0` already denotes an integer and is
+  /// returned exactly (scaled up by the trailing zeros) without any rounding.
+  ///
+  /// Example:
+  /// ```motoko include=import
+  /// let r = DecimalInt.ceil(DecimalInt.new(125, 2)); // 2 (1.25 rounds to 2)
+  /// let s = DecimalInt.ceil(DecimalInt.new(-175, 2)); // -1 (-1.75 rounds to -1)
+  /// ```
+  ///
+  /// Never traps.
+  public func ceil(self : DecimalInt) : Int {
+    if (self.decimals <= 0) {
+      // No fractional part: value * 10 ** (-decimals) is already an integer.
+      self.value * pow10(Int.abs(self.decimals));
+    } else {
+      let scale = pow10(Int.abs(self.decimals));
+      let magnitude = Int.abs(self.value);
+      let quotient = magnitude / scale;
+      let remainder = magnitude % scale;
+      // The division truncates towards zero, which is already the ceiling of a
+      // negative value; a positive value with a fractional part needs one more
+      // step away from zero.
+      if (self.value < 0) {
+        -quotient;
+      } else if (remainder > 0) {
+        quotient + 1;
+      } else {
+        quotient;
+      };
+    };
+  };
+
   /// Rounds `d` to the nearest integer and returns it as an `Int`.
   ///
   /// Ties (a fractional part of exactly one half) are rounded away from zero.

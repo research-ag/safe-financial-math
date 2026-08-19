@@ -91,6 +91,8 @@ module {
   public func compare(a : DecimalInt, b : DecimalInt) : Order.Order;
   public func equal(a : DecimalInt, b : DecimalInt) : Bool;
 
+  public func floor(d : DecimalInt) : Int; // towards -infinity
+  public func ceil(d : DecimalInt) : Int; // towards +infinity
   public func round(d : DecimalInt) : Int; // nearest, half away from zero
   public func toFloat(d : DecimalInt) : Float; // approximate
   public func toText(d : DecimalInt) : Text;
@@ -100,7 +102,7 @@ module {
 
 `DecimalNat` module (`mo:safe-financial-math/DecimalNat`) — the non-negative
 counterpart, backed by a `Nat`. It has the same interface minus `neg`/`abs`,
-`sub` traps on underflow, and `round` returns a `Nat`:
+`sub` traps on underflow, and `floor`/`ceil`/`round` return a `Nat`:
 
 ```motoko
 module {
@@ -116,6 +118,8 @@ module {
   public func compare(a : DecimalNat, b : DecimalNat) : Order.Order;
   public func equal(a : DecimalNat, b : DecimalNat) : Bool;
 
+  public func floor(d : DecimalNat) : Nat; // truncates the fractional part
+  public func ceil(d : DecimalNat) : Nat; // rounds any fractional part up
   public func round(d : DecimalNat) : Nat; // nearest, half up
   public func toFloat(d : DecimalNat) : Float; // approximate
   public func toText(d : DecimalNat) : Text;
@@ -256,6 +260,16 @@ finer of the two scales, and `mul` multiplies the values and adds the scales.
 Division is deliberately omitted, as the quotient is not, in general,
 representable exactly in base ten — convert to `Float` with `toFloat` when an
 approximate quotient is needed.
+
+Both modules convert to an integer with three explicitly directed roundings, so
+the direction is a choice at the call site rather than a property of the
+representation: `floor` towards negative infinity (the safe payout amount),
+`ceil` towards positive infinity (the safe required amount), and `round` to the
+nearest integer with ties going away from zero. In `DecimalNat` all three are
+non-negative and `floor` is a plain truncation, whereas in `DecimalInt` the
+direction is relative to the number line and not to zero: `floor(-1.75)` is
+`-2` and `ceil(-1.75)` is `-1`. A decimal whose `decimals` is `0` or negative
+already denotes an integer, so all three return it exactly, without rounding.
 
 ## Implementation notes
 

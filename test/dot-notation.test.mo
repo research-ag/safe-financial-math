@@ -12,10 +12,14 @@ test(
     assert a.mul(b).equal(DecimalInt.new(123, 2));
     assert a.neg().equal(DecimalInt.new(-123, 2));
     assert a.compare(b) == #greater;
+    assert a.floor() == 1;
+    assert a.ceil() == 2;
     assert a.round() == 1;
     assert a.toText() == "1.23";
     assert a.toFloat() == 1.23;
     assert DecimalInt.new(-123, 2).abs().equal(DecimalNat.new(123, 2));
+    assert DecimalInt.new(-123, 2).floor() == -2;
+    assert DecimalInt.new(-123, 2).ceil() == -1;
   },
 );
 
@@ -28,6 +32,8 @@ test(
     assert a.sub(b).equal(DecimalNat.new(23, 2));
     assert a.mul(b).equal(DecimalNat.new(123, 2));
     assert a.compare(b) == #greater;
+    assert a.floor() == 1;
+    assert a.ceil() == 2;
     assert a.round() == 1;
     assert a.toText() == "1.23";
     assert a.toFloat() == 1.23;

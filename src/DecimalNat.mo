@@ -168,6 +168,51 @@ module {
     compare(self, other) == #equal;
   };
 
+  /// Rounds `d` down to the nearest integer and returns it as an `Nat`.
+  ///
+  /// A decimal with `decimals <= 0` already denotes an integer and is
+  /// returned exactly (scaled up by the trailing zeros) without any rounding.
+  ///
+  /// Example:
+  /// ```motoko include=import
+  /// let r = DecimalNat.floor(DecimalNat.new(125, 2)); // 1 (1.25 rounds to 1)
+  /// let s = DecimalNat.floor(DecimalNat.new(175, 2)); // 1 (1.75 rounds to 1)
+  /// ```
+  ///
+  /// Never traps.
+  public func floor(self : DecimalNat) : Nat {
+    if (self.decimals <= 0) {
+      // No fractional part: value * 10 ** (-decimals) is already an integer.
+      self.value * pow10(Int.abs(self.decimals));
+    } else {
+      // The division truncates, which for a non-negative value is the floor.
+      self.value / pow10(Int.abs(self.decimals));
+    };
+  };
+
+  /// Rounds `d` up to the nearest integer and returns it as an `Nat`.
+  ///
+  /// A decimal with `decimals <= 0` already denotes an integer and is
+  /// returned exactly (scaled up by the trailing zeros) without any rounding.
+  ///
+  /// Example:
+  /// ```motoko include=import
+  /// let r = DecimalNat.ceil(DecimalNat.new(125, 2)); // 2 (1.25 rounds to 2)
+  /// let s = DecimalNat.ceil(DecimalNat.new(175, 2)); // 2 (1.75 rounds to 2)
+  /// ```
+  ///
+  /// Never traps.
+  public func ceil(self : DecimalNat) : Nat {
+    if (self.decimals <= 0) {
+      // No fractional part: value * 10 ** (-decimals) is already an integer.
+      self.value * pow10(Int.abs(self.decimals));
+    } else {
+      let scale = pow10(Int.abs(self.decimals));
+      let quotient = self.value / scale;
+      if (self.value % scale > 0) quotient + 1 else quotient;
+    };
+  };
+
   /// Rounds `d` to the nearest integer and returns it as an `Nat`.
   ///
   /// Ties (a fractional part of exactly one half) are rounded up (away from

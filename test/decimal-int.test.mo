@@ -69,6 +69,87 @@ test(
 );
 
 test(
+  "floor rounds towards negative infinity",
+  func() {
+    assert DecimalInt.floor(DecimalInt.new(125, 2)) == 1; // 1.25 -> 1
+    assert DecimalInt.floor(DecimalInt.new(175, 2)) == 1; // 1.75 -> 1
+    assert DecimalInt.floor(DecimalInt.new(199, 2)) == 1; // 1.99 -> 1
+    assert DecimalInt.floor(DecimalInt.new(200, 2)) == 2; // 2.00 -> 2, exact
+    assert DecimalInt.floor(DecimalInt.new(1, 2)) == 0; // 0.01 -> 0
+    assert DecimalInt.floor(DecimalInt.new(0, 2)) == 0; // 0.00 -> 0
+    // Negative values round away from zero, not towards it.
+    assert DecimalInt.floor(DecimalInt.new(-125, 2)) == -2; // -1.25 -> -2
+    assert DecimalInt.floor(DecimalInt.new(-175, 2)) == -2; // -1.75 -> -2
+    assert DecimalInt.floor(DecimalInt.new(-1, 2)) == -1; // -0.01 -> -1
+    assert DecimalInt.floor(DecimalInt.new(-100, 2)) == -1; // -1.00 -> -1, exact
+    assert DecimalInt.floor(DecimalInt.new(-200, 2)) == -2; // -2.00 -> -2, exact
+    // decimals <= 0 already denotes an integer: no rounding, just trailing zeros.
+    assert DecimalInt.floor(DecimalInt.new(123, 0)) == 123;
+    assert DecimalInt.floor(DecimalInt.new(123, -2)) == 12_300;
+    assert DecimalInt.floor(DecimalInt.new(-123, -2)) == -12_300;
+    // Beyond 2 ** 53 the result is still exact.
+    assert DecimalInt.floor(DecimalInt.new(900_719_925_474_099_399, 2)) == 9_007_199_254_740_993;
+    assert DecimalInt.floor(DecimalInt.new(-900_719_925_474_099_301, 2)) == -9_007_199_254_740_994;
+  },
+);
+
+test(
+  "ceil rounds towards positive infinity",
+  func() {
+    assert DecimalInt.ceil(DecimalInt.new(125, 2)) == 2; // 1.25 -> 2
+    assert DecimalInt.ceil(DecimalInt.new(175, 2)) == 2; // 1.75 -> 2
+    assert DecimalInt.ceil(DecimalInt.new(101, 2)) == 2; // 1.01 -> 2
+    assert DecimalInt.ceil(DecimalInt.new(200, 2)) == 2; // 2.00 -> 2, exact
+    assert DecimalInt.ceil(DecimalInt.new(1, 2)) == 1; // 0.01 -> 1
+    assert DecimalInt.ceil(DecimalInt.new(0, 2)) == 0; // 0.00 -> 0
+    // Negative values round towards zero.
+    assert DecimalInt.ceil(DecimalInt.new(-125, 2)) == -1; // -1.25 -> -1
+    assert DecimalInt.ceil(DecimalInt.new(-175, 2)) == -1; // -1.75 -> -1
+    assert DecimalInt.ceil(DecimalInt.new(-1, 2)) == 0; // -0.01 -> 0
+    assert DecimalInt.ceil(DecimalInt.new(-100, 2)) == -1; // -1.00 -> -1, exact
+    assert DecimalInt.ceil(DecimalInt.new(-200, 2)) == -2; // -2.00 -> -2, exact
+    // decimals <= 0 already denotes an integer: no rounding, just trailing zeros.
+    assert DecimalInt.ceil(DecimalInt.new(123, 0)) == 123;
+    assert DecimalInt.ceil(DecimalInt.new(123, -2)) == 12_300;
+    assert DecimalInt.ceil(DecimalInt.new(-123, -2)) == -12_300;
+    // Beyond 2 ** 53 the result is still exact.
+    assert DecimalInt.ceil(DecimalInt.new(900_719_925_474_099_301, 2)) == 9_007_199_254_740_994;
+    assert DecimalInt.ceil(DecimalInt.new(-900_719_925_474_099_399, 2)) == -9_007_199_254_740_993;
+  },
+);
+
+test(
+  "floor and ceil bracket round and each other",
+  func() {
+    // floor(x) <= round(x) <= ceil(x), and the two differ by exactly one unit
+    // unless x is already an integer.
+    let samples = [
+      DecimalInt.new(0, 3),
+      DecimalInt.new(1, 3),
+      DecimalInt.new(1_500, 3),
+      DecimalInt.new(-1, 3),
+      DecimalInt.new(-1_500, 3),
+      DecimalInt.new(2_000, 3),
+      DecimalInt.new(-2_000, 3),
+      DecimalInt.new(7, 0),
+      DecimalInt.new(-7, 0),
+      DecimalInt.new(7, -3),
+      DecimalInt.new(-7, -3),
+    ];
+    for (d in samples.vals()) {
+      let lo = DecimalInt.floor(d);
+      let hi = DecimalInt.ceil(d);
+      assert lo <= DecimalInt.round(d) and DecimalInt.round(d) <= hi;
+      // The bracket is tight, and exact values collapse onto one integer.
+      let isExact = DecimalInt.equal(DecimalInt.fromInt(lo), d);
+      assert (if (isExact) hi == lo else hi == lo + 1);
+      // ceil is the mirror image of floor: ceil(x) == -floor(-x).
+      assert hi == -DecimalInt.floor(DecimalInt.neg(d));
+    };
+  },
+);
+
+test(
   "round applies half-away-from-zero rounding",
   func() {
     assert DecimalInt.round(DecimalInt.new(125, 2)) == 1; // 1.25 -> 1

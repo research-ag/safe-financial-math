@@ -58,6 +58,64 @@ test(
 );
 
 test(
+  "floor truncates the fractional part",
+  func() {
+    assert DecimalNat.floor(DecimalNat.new(125, 2)) == 1; // 1.25 -> 1
+    assert DecimalNat.floor(DecimalNat.new(175, 2)) == 1; // 1.75 -> 1
+    assert DecimalNat.floor(DecimalNat.new(199, 2)) == 1; // 1.99 -> 1
+    assert DecimalNat.floor(DecimalNat.new(200, 2)) == 2; // 2.00 -> 2, exact
+    assert DecimalNat.floor(DecimalNat.new(1, 2)) == 0; // 0.01 -> 0
+    assert DecimalNat.floor(DecimalNat.new(0, 2)) == 0; // 0.00 -> 0
+    // decimals <= 0 already denotes an integer: no rounding, just trailing zeros.
+    assert DecimalNat.floor(DecimalNat.new(123, 0)) == 123;
+    assert DecimalNat.floor(DecimalNat.new(123, -2)) == 12_300;
+    // Beyond 2 ** 53 the result is still exact.
+    assert DecimalNat.floor(DecimalNat.new(900_719_925_474_099_399, 2)) == 9_007_199_254_740_993;
+  },
+);
+
+test(
+  "ceil rounds any fractional part up",
+  func() {
+    assert DecimalNat.ceil(DecimalNat.new(125, 2)) == 2; // 1.25 -> 2
+    assert DecimalNat.ceil(DecimalNat.new(175, 2)) == 2; // 1.75 -> 2
+    assert DecimalNat.ceil(DecimalNat.new(101, 2)) == 2; // 1.01 -> 2
+    assert DecimalNat.ceil(DecimalNat.new(200, 2)) == 2; // 2.00 -> 2, exact
+    assert DecimalNat.ceil(DecimalNat.new(1, 2)) == 1; // 0.01 -> 1
+    assert DecimalNat.ceil(DecimalNat.new(0, 2)) == 0; // 0.00 -> 0
+    // decimals <= 0 already denotes an integer: no rounding, just trailing zeros.
+    assert DecimalNat.ceil(DecimalNat.new(123, 0)) == 123;
+    assert DecimalNat.ceil(DecimalNat.new(123, -2)) == 12_300;
+    // Beyond 2 ** 53 the result is still exact.
+    assert DecimalNat.ceil(DecimalNat.new(900_719_925_474_099_301, 2)) == 9_007_199_254_740_994;
+  },
+);
+
+test(
+  "floor and ceil bracket round and each other",
+  func() {
+    // floor(x) <= round(x) <= ceil(x), and the two differ by exactly one unit
+    // unless x is already an integer.
+    let samples = [
+      DecimalNat.new(0, 3),
+      DecimalNat.new(1, 3),
+      DecimalNat.new(1_500, 3),
+      DecimalNat.new(2_000, 3),
+      DecimalNat.new(7, 0),
+      DecimalNat.new(7, -3),
+    ];
+    for (d in samples.vals()) {
+      let lo = DecimalNat.floor(d);
+      let hi = DecimalNat.ceil(d);
+      assert lo <= DecimalNat.round(d) and DecimalNat.round(d) <= hi;
+      // The bracket is tight, and exact values collapse onto one integer.
+      let isExact = DecimalNat.equal(DecimalNat.fromNat(lo), d);
+      assert (if (isExact) hi == lo else hi == lo + 1);
+    };
+  },
+);
+
+test(
   "round applies half-away-from-zero rounding",
   func() {
     assert DecimalNat.round(DecimalNat.new(125, 2)) == 1; // 1.25 -> 1
