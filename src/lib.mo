@@ -30,6 +30,8 @@ import Prim "mo:prim";
 import Float "mo:core/Float";
 import Int "mo:core/Int";
 
+import U "./utils";
+
 module {
 
   /// `2 ** 53`: up to this magnitude every integer is representable as a
@@ -229,9 +231,9 @@ module {
     if (decimals == 0) {
       value;
     } else if (decimals > 0) {
-      value * Float.pow(10.0, Int.toFloat(decimals));
+      value * Int.toFloat(U.pow10(Int.abs(decimals)));
     } else {
-      value / Float.pow(10.0, Int.toFloat(-decimals));
+      value / Int.toFloat(U.pow10(Int.abs(decimals)));
     };
   };
 
