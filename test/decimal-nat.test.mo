@@ -13,6 +13,20 @@ test(
 );
 
 test(
+  "fromFloat builds the expected representation",
+  func() {
+    let a = DecimalNat.fromFloat(1.23, 3);
+    assert a.value == 123 and a.decimals == 2;
+
+    let b = DecimalNat.fromFloat(10234.5678, 9);
+    assert b.value == 102345678 and b.decimals == 4;
+
+    let c = DecimalNat.fromFloat(1_000_000_000.0, 5);
+    assert c.value == 10_000 and c.decimals == -5;
+  },
+);
+
+test(
   "add rescales to the finer scale and stays exact",
   func() {
     // 1.23 + 1 = 2.23

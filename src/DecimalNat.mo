@@ -87,6 +87,23 @@ module {
     { value = value; decimals = decimals };
   };
 
+  public func fromFloat(f : Float, digits : Nat) : DecimalNat {
+    if (f < 0.0) {
+      Runtime.trap("DecimalNat.fromFloat: negative float");
+    };
+    let div = if (f > 1 or f < -1) {
+      2.302_585_092_994_045_6;
+    } else {
+      2.302_585_092_994_045_7;
+    };
+    let log10 = Float.floor(Float.log(f) / div);
+    let e = Float.fromInt(digits) - 1 - log10;
+    new(
+      Int.abs(Float.toInt(Float.floor(f * 10 ** e))),
+      digits - Float.toInt(log10) - 1,
+    );
+  };
+
   /// Returns the exact sum `a + b`.
   ///
   /// Both operands are first rescaled to the finer (larger) of the two
