@@ -8,12 +8,15 @@
 /// integer larger than `2 ** 53` cannot be represented exactly, so a naive
 /// `Float.fromInt(value) * price` rounds to nearest twice — once when
 /// converting the token amount, and once when multiplying — and either rounding
-/// can go in the unsafe direction. In a financial setting this is dangerous:
-/// rounding a payout up means a canister can pay out more than it took in.
+/// can go in the unsafe direction, by an amount far larger than one token. In a
+/// financial setting this is dangerous: rounding a payout up means a canister
+/// can pay out more than it took in.
+///
 /// The helpers here bound the rounding direction explicitly so callers can pick
-/// the safe side (floor for what you pay out, ceil for what you collect), and
-/// they get that bound by computing the product in exact integer arithmetic
-/// rather than in floating point.
+/// the safe side (floor for what you pay out, ceil for what you collect). While
+/// the product stays below `2 ** 53` they round the `Float` result, which is
+/// then less than one unit away from the exact product; above `2 ** 53` they
+/// switch to exact integer arithmetic, where no rounding can creep in at all.
 ///
 /// ```motoko name=import
 /// import FinancialMath "mo:safe-financial-math";
@@ -28,6 +31,14 @@ import Float "mo:core/Float";
 import Int "mo:core/Int";
 
 module {
+
+  /// `2 ** 53`: up to this magnitude every integer is representable as a
+  /// `Float`, so a `Float` product that stays below it — and was formed from an
+  /// exactly converted `value` — is less than one unit away from the exact
+  /// product, which makes flooring or ceiling it meaningful. Above it, `Float`
+  /// arithmetic has to be abandoned for exact integer arithmetic.
+  let mantissaLimit : Nat = 9_007_199_254_740_992;
+  let mantissaLimitAsFloat : Float = 9_007_199_254_740_992.0;
 
   /// Splits the magnitude of a finite `Float` into an exact
   /// `(numerator, exponent)` pair, so that
@@ -56,11 +67,25 @@ module {
     (Prim.abs(Prim.floatToInt(numerator)), exponent);
   };
 
-  /// Divides `dividend` by `2 ** bits`, rounding the quotient up.
-  func shiftRightCeil(dividend : Nat, bits : Nat32) : Nat {
-    let quotient = Prim.shiftRight(dividend, bits);
+  /// Returns `floor(value * Float.abs(multiplier))`, computed exactly:
+  /// `multiplier` is the fraction `numerator / 2 ** exponent`, so the product is
+  /// a multiplication and a right shift on unbounded `Nat`s.
+  ///
+  /// Traps if `multiplier` is `NaN` or infinite.
+  func multiplyFloor(value : Nat, multiplier : Float) : Nat {
+    let (numerator, exponent) = splitFloat(multiplier);
+    Prim.shiftRight(value * numerator, exponent);
+  };
+
+  /// Returns `ceil(value * Float.abs(multiplier))`, computed exactly.
+  ///
+  /// Traps if `multiplier` is `NaN` or infinite.
+  func multiplyCeil(value : Nat, multiplier : Float) : Nat {
+    let (numerator, exponent) = splitFloat(multiplier);
+    let product = value * numerator;
+    let quotient = Prim.shiftRight(product, exponent);
     // The shift dropped nothing exactly when it is undone by shifting back.
-    if (Prim.shiftLeft(quotient, bits) == dividend) quotient else quotient + 1;
+    if (Prim.shiftLeft(quotient, exponent) == product) quotient else quotient + 1;
   };
 
   /// Converts a `Nat` to a `Float`, truncating the integer first when it is
@@ -88,19 +113,22 @@ module {
   /// canister: the returned value is always less than or equal to the exact
   /// mathematical product of `value` and `multiplier`.
   ///
-  /// The product is *not* computed in floating point. A `Float` has only a
-  /// 53-bit mantissa, so both the conversion of a large `value` and the
-  /// multiplication itself round to nearest, and either can push the result
-  /// *above* the exact product — which is precisely what this function must
-  /// never do. Instead `multiplier` is decomposed into the exact fraction
-  /// `numerator / 2 ** k` that it denotes, and the multiplication and division
-  /// are carried out on unbounded `Nat`s. The result is therefore exact for
-  /// arbitrarily large operands.
+  /// As long as `value` and the product both stay below `2 ** 53`, the product
+  /// is computed in floating point: every integer in that range is
+  /// representable, so the `Float` result is less than one unit away from the
+  /// exact product, and flooring it absorbs the difference. This is also what
+  /// keeps a `Float` that merely approximates a decimal from costing a unit of
+  /// rounding — `0.0125` denotes `0.012500000000000000693...`, and the example
+  /// below still yields the expected `50`.
   ///
-  /// Note that the bound is on the product of `value` and the `Float` value of
-  /// `multiplier`, which is itself only the closest double to the decimal a
-  /// caller writes: `0.0125` denotes `0.012500000000000000693...`. Use
-  /// `DecimalNat` when the multiplier has to be an exact decimal.
+  /// Above `2 ** 53` that reasoning breaks down: not every integer is
+  /// representable any more, so both the conversion of `value` and the
+  /// multiplication round to nearest and either can push the result *above* the
+  /// exact product — which is precisely what this function must never do. For
+  /// those products `multiplier` is instead decomposed into the exact fraction
+  /// `numerator / 2 ** k` that it denotes, and the multiplication and division
+  /// are carried out on unbounded `Nat`s, so the result is exact no matter how
+  /// large the operands are.
   ///
   /// Example:
   /// ```motoko include=import
@@ -113,14 +141,21 @@ module {
   ///
   /// Traps if `multiplier` is `NaN` or infinite.
   public func multiplyNatByFloatMin(value : Nat, multiplier : Float) : Nat {
-    let (numerator, exponent) = splitFloat(multiplier);
-    let product = value * numerator;
+    if (value <= mantissaLimit) {
+      // The conversion is exact here, so the multiplication below rounds at
+      // most once. A `NaN` or infinite product fails this test and falls
+      // through to the exact path, which rejects both.
+      let product = multiplier * Prim.intToFloat(value);
+      if (Prim.floatAbs(product) < mantissaLimitAsFloat) {
+        return Prim.abs(Prim.floatToInt(Prim.floatFloor(product)));
+      };
+    };
     // Flooring a negative product rounds its magnitude up, because
     // `floor(-x) == -ceil(x)`.
     if (multiplier < 0.0) {
-      shiftRightCeil(product, exponent);
+      multiplyCeil(value, multiplier);
     } else {
-      Prim.shiftRight(product, exponent);
+      multiplyFloor(value, multiplier);
     };
   };
 
@@ -133,19 +168,23 @@ module {
   /// value is always greater than or equal to the exact mathematical product of
   /// `value` and `multiplier`.
   ///
-  /// Like `multiplyNatByFloatMin`, the product is computed in exact integer
-  /// arithmetic rather than in floating point, where rounding to nearest can
-  /// land *below* the exact product once the product exceeds `2 ** 53`.
+  /// Like `multiplyNatByFloatMin`, products below `2 ** 53` are computed in
+  /// floating point and larger ones in exact integer arithmetic, where rounding
+  /// to nearest can otherwise land *below* the exact product.
+  ///
+  /// Below `2 ** 53` the guarantee is therefore the weaker one that the result
+  /// is the ceiling of the *rounded* product, which can be one unit below the
+  /// exact product. That is the deliberate trade for treating a `Float` as the
+  /// decimal it was written as: the double nearest `0.0125` is
+  /// `0.012500000000000000693...`, so a strict ceiling of `4_000 * 0.0125`
+  /// would be `51` rather than the `50` in the example below. Use `DecimalNat`
+  /// when the multiplier has to be an exact decimal and the collected amount
+  /// must never be short.
   ///
   /// Example:
   /// ```motoko include=import
-  /// // 4_000 * 0.012500000000000000693... = 50.000000000000002775...
-  /// let required = FinancialMath.multiplyNatByFloatMax(4_000, 0.0125); // 51
+  /// let required = FinancialMath.multiplyNatByFloatMax(4_000, 0.0125); // 50
   /// ```
-  ///
-  /// As the example shows, ceiling the exact product of a `Float` that only
-  /// approximates a decimal can cost a unit of rounding. Use `DecimalNat` when
-  /// the multiplier has to be an exact decimal.
   ///
   /// `multiplier` is expected to be a non-negative price. A negative
   /// `multiplier` returns the absolute value of the ceiled product rather than
@@ -153,14 +192,21 @@ module {
   ///
   /// Traps if `multiplier` is `NaN` or infinite.
   public func multiplyNatByFloatMax(value : Nat, multiplier : Float) : Nat {
-    let (numerator, exponent) = splitFloat(multiplier);
-    let product = value * numerator;
+    if (value <= mantissaLimit) {
+      // The conversion is exact here, so the multiplication below rounds at
+      // most once. A `NaN` or infinite product fails this test and falls
+      // through to the exact path, which rejects both.
+      let product = multiplier * Prim.intToFloat(value);
+      if (Prim.floatAbs(product) < mantissaLimitAsFloat) {
+        return Prim.abs(Prim.floatToInt(Prim.floatCeil(product)));
+      };
+    };
     // Ceiling a negative product rounds its magnitude down, because
     // `ceil(-x) == -floor(x)`.
     if (multiplier < 0.0) {
-      Prim.shiftRight(product, exponent);
+      multiplyFloor(value, multiplier);
     } else {
-      shiftRightCeil(product, exponent);
+      multiplyCeil(value, multiplier);
     };
   };
 

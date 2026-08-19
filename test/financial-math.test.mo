@@ -3,13 +3,57 @@ import Float "mo:core/Float";
 
 import FinancialMath "../src/lib";
 
+// `multiplyNatByFloatMin` and `multiplyNatByFloatMax` have two regimes: while
+// `value` and the product both stay below 2 ** 53 they round the Float product,
+// and otherwise they evaluate the product exactly on unbounded Nats. Both are
+// tested below, per function, along with the boundary between them.
+//
+// Expected values were computed with exact rational arithmetic, so they check
+// the implementation against the mathematical product rather than against
+// itself.
+
+let mantissaLimit : Nat = 9_007_199_254_740_992; // 2 ** 53
+
+// ---------------------------------------------------------------------------
+// intToFloatFloor
+// ---------------------------------------------------------------------------
+
+test(
+  "intToFloatFloor: values within the mantissa convert exactly",
+  func() {
+    assert FinancialMath.intToFloatFloor(0) == 0.0;
+    assert FinancialMath.intToFloatFloor(1) == 1.0;
+    assert FinancialMath.intToFloatFloor(4_000) == 4_000.0;
+    assert FinancialMath.intToFloatFloor(mantissaLimit - 1) == 9_007_199_254_740_991.0;
+    assert FinancialMath.intToFloatFloor(mantissaLimit) == 9_007_199_254_740_992.0;
+  },
+);
+
 test(
   "intToFloatFloor: truncates values above Float precision",
   func() {
     let value : Nat = 1_152_921_504_606_846_977; // 2 ** 60 + 1
     assert FinancialMath.intToFloatFloor(value) == 1_152_921_504_606_846_976.0;
+    // 2 ** 53 + 1 is the smallest integer a Float cannot represent.
+    assert FinancialMath.intToFloatFloor(mantissaLimit + 1) == 9_007_199_254_740_992.0;
   },
 );
+
+test(
+  "intToFloatFloor: never rounds up, unlike a plain conversion",
+  func() {
+    let value : Nat = 1_152_921_504_606_846_975; // 2 ** 60 - 1
+    // Doubles are 256 apart in this range, so the nearest one lies *above* the
+    // value and a plain conversion overstates it.
+    assert Float.fromInt(value) == 1_152_921_504_606_846_976.0;
+    // Truncating the low-order bits first gives 2 ** 60 - 128 instead.
+    assert FinancialMath.intToFloatFloor(value) == 1_152_921_504_606_846_848.0;
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Float path: products below 2 ** 53
+// ---------------------------------------------------------------------------
 
 test(
   "multiplyNatByFloatMin: basic flooring",
@@ -29,8 +73,171 @@ test(
     assert FinancialMath.multiplyNatByFloatMin(3, 0.5) == 1;
     // 7 * (1 / 3) = 2.33..., floored to 2.
     assert FinancialMath.multiplyNatByFloatMin(7, 1.0 / 3.0) == 2;
+    // 12_345 * 0.678 = 8_369.91, floored to 8_369.
+    assert FinancialMath.multiplyNatByFloatMin(12_345, 0.678) == 8_369;
   },
 );
+
+test(
+  "multiplyNatByFloatMax: basic ceiling",
+  func() {
+    // The closest double to 0.0125 is 0.012500000000000000693..., so the exact
+    // product is 50.000000000000002775... A product this far below 2 ** 53 is
+    // rounded as a Float, which absorbs the representation error of 0.0125
+    // instead of charging a whole extra unit for it.
+    assert FinancialMath.multiplyNatByFloatMax(4_000, 0.0125) == 50;
+    // 0.015625 is 2 ** -6, so this product is exact and nothing is rounded up.
+    assert FinancialMath.multiplyNatByFloatMax(4_096, 0.015_625) == 64;
+    assert FinancialMath.multiplyNatByFloatMax(100, 1.0) == 100;
+    assert FinancialMath.multiplyNatByFloatMax(0, 1.5) == 0;
+  },
+);
+
+test(
+  "multiplyNatByFloatMax: never rounds below the exact product",
+  func() {
+    // 3 * 0.5 = 1.5, ceiled to 2.
+    assert FinancialMath.multiplyNatByFloatMax(3, 0.5) == 2;
+    // 7 * (1 / 3) = 2.33..., ceiled to 3.
+    assert FinancialMath.multiplyNatByFloatMax(7, 1.0 / 3.0) == 3;
+    // 12_345 * 0.678 = 8_369.91, ceiled to 8_370.
+    assert FinancialMath.multiplyNatByFloatMax(12_345, 0.678) == 8_370;
+  },
+);
+
+test(
+  "float path: an exactly representable multiplier leaves the product exact",
+  func() {
+    // These products are integers in binary floating point, so neither bound
+    // moves them and both functions agree.
+    assert FinancialMath.multiplyNatByFloatMin(4_096, 0.015_625) == 64; // 2 ** -6
+    assert FinancialMath.multiplyNatByFloatMax(4_096, 0.015_625) == 64;
+    assert FinancialMath.multiplyNatByFloatMin(1_000, 2.0) == 2_000;
+    assert FinancialMath.multiplyNatByFloatMax(1_000, 2.0) == 2_000;
+    assert FinancialMath.multiplyNatByFloatMin(mantissaLimit - 1, 1.0) == mantissaLimit - 1;
+    assert FinancialMath.multiplyNatByFloatMax(mantissaLimit - 1, 1.0) == mantissaLimit - 1;
+  },
+);
+
+test(
+  "float path: a half-way product is floored by min and ceiled by max",
+  func() {
+    assert FinancialMath.multiplyNatByFloatMin(1_000, 0.015_625) == 15; // 15.625
+    assert FinancialMath.multiplyNatByFloatMax(1_000, 0.015_625) == 16;
+    assert FinancialMath.multiplyNatByFloatMin(12_345, 0.5) == 6_172; // 6_172.5
+    assert FinancialMath.multiplyNatByFloatMax(12_345, 0.5) == 6_173;
+  },
+);
+
+test(
+  "float path: the Float rounding absorbs a decimal multiplier's error",
+  func() {
+    // Deliberate trade-off of the Float regime: a decimal multiplier is treated
+    // as the decimal it was written as, not as the slightly larger double it
+    // actually is, so `max` can come out one unit below the exact product.
+    //
+    // 4_000 * 0.0125 is exactly 50.000000000000002775..., yet the Float product
+    // is 50.0 and both bounds return 50 rather than a strict 51.
+    assert FinancialMath.multiplyNatByFloatMin(4_000, 0.0125) == 50;
+    assert FinancialMath.multiplyNatByFloatMax(4_000, 0.0125) == 50;
+    // Likewise 100 * 0.1 is exactly 10.000000000000000555..., and both bounds
+    // return 10 instead of the strict ceiling of 11.
+    assert FinancialMath.multiplyNatByFloatMin(100, 0.1) == 10;
+    assert FinancialMath.multiplyNatByFloatMax(100, 0.1) == 10;
+  },
+);
+
+test(
+  "float path: a zero value or a zero multiplier gives zero",
+  func() {
+    assert FinancialMath.multiplyNatByFloatMin(0, 1_000.0) == 0;
+    assert FinancialMath.multiplyNatByFloatMax(0, 1_000.0) == 0;
+    assert FinancialMath.multiplyNatByFloatMin(10, 0.0) == 0;
+    assert FinancialMath.multiplyNatByFloatMax(10, 0.0) == 0;
+    assert FinancialMath.multiplyNatByFloatMin(0, 0.0) == 0;
+    assert FinancialMath.multiplyNatByFloatMax(0, 0.0) == 0;
+  },
+);
+
+test(
+  "a negative multiplier returns the magnitude of the rounded product",
+  func() {
+    // floor(-1.5) == -2 and ceil(-1.5) == -1.
+    assert FinancialMath.multiplyNatByFloatMin(3, -0.5) == 2;
+    assert FinancialMath.multiplyNatByFloatMax(3, -0.5) == 1;
+    // floor(-2.33...) == -3 and ceil(-2.33...) == -2.
+    assert FinancialMath.multiplyNatByFloatMin(7, -(1.0 / 3.0)) == 3;
+    assert FinancialMath.multiplyNatByFloatMax(7, -(1.0 / 3.0)) == 2;
+    // An integral product is not moved in either direction.
+    assert FinancialMath.multiplyNatByFloatMin(100, -1.0) == 100;
+    assert FinancialMath.multiplyNatByFloatMax(100, -1.0) == 100;
+    assert FinancialMath.multiplyNatByFloatMin(4_000, -0.0125) == 50;
+    assert FinancialMath.multiplyNatByFloatMax(4_000, -0.0125) == 50;
+  },
+);
+
+test(
+  "min and max bracket the exact product",
+  func() {
+    let value : Nat = 12_345;
+    let price = 0.678;
+    let lo = FinancialMath.multiplyNatByFloatMin(value, price);
+    let hi = FinancialMath.multiplyNatByFloatMax(value, price);
+    assert lo <= hi;
+    assert hi <= lo + 1;
+  },
+);
+
+// ---------------------------------------------------------------------------
+// The boundary at 2 ** 53
+// ---------------------------------------------------------------------------
+
+test(
+  "exact arithmetic takes over as soon as the product exceeds 2 ** 53",
+  func() {
+    // Both values are below 2 ** 53 and both multipliers are exact, so only the
+    // product leaves the range where Float can represent every integer. There
+    // the Float product is rounded to a *different* integer, in the unsafe
+    // direction for each function, and only exact arithmetic gets it right.
+
+    // 9_007_199_254_740_991 * 3 rounds down to ...972 as a Float.
+    assert FinancialMath.multiplyNatByFloatMax(9_007_199_254_740_991, 3.0) == 27_021_597_764_222_973;
+    // 6_000_000_000_000_001 * 3 rounds up to ...004 as a Float.
+    assert FinancialMath.multiplyNatByFloatMin(6_000_000_000_000_001, 3.0) == 18_000_000_000_000_003;
+  },
+);
+
+test(
+  "the value 2 ** 53 and above is multiplied exactly",
+  func() {
+    // 2 ** 53 itself is still representable, but the product is no longer below
+    // the limit, so it takes the exact path — with the same answer.
+    assert FinancialMath.multiplyNatByFloatMin(mantissaLimit, 1.0) == mantissaLimit;
+    assert FinancialMath.multiplyNatByFloatMax(mantissaLimit, 1.0) == mantissaLimit;
+    // 2 ** 53 + 1 cannot be represented as a Float at all, so only exact
+    // arithmetic can return it unchanged.
+    assert FinancialMath.multiplyNatByFloatMin(mantissaLimit + 1, 1.0) == mantissaLimit + 1;
+    assert FinancialMath.multiplyNatByFloatMax(mantissaLimit + 1, 1.0) == mantissaLimit + 1;
+    // Halving it lands half-way between two integers: 4_503_599_627_370_496.5.
+    assert FinancialMath.multiplyNatByFloatMin(mantissaLimit + 1, 0.5) == 4_503_599_627_370_496;
+    assert FinancialMath.multiplyNatByFloatMax(mantissaLimit + 1, 0.5) == 4_503_599_627_370_497;
+  },
+);
+
+test(
+  "exact path: a bound can be an integer no Float can represent",
+  func() {
+    // (2 ** 53 - 1) * (1 + 2 ** -52) is 9_007_199_254_740_992.99999..., so the
+    // ceiling is 2 ** 53 + 1 — a value that has no Float representation and
+    // therefore could never be produced by rounding a Float product.
+    assert FinancialMath.multiplyNatByFloatMin(mantissaLimit - 1, 1.000_000_000_000_000_2) == mantissaLimit;
+    assert FinancialMath.multiplyNatByFloatMax(mantissaLimit - 1, 1.000_000_000_000_000_2) == mantissaLimit + 1;
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Exact path: products at or above 2 ** 53
+// ---------------------------------------------------------------------------
 
 test(
   "multiplyNatByFloatMin: precision-safe for values above 2 ** 53",
@@ -46,30 +253,6 @@ test(
 );
 
 test(
-  "multiplyNatByFloatMax: basic ceiling",
-  func() {
-    // 0.0125 is not representable as a Float; the closest double is
-    // 0.012500000000000000693..., so the exact product is
-    // 50.000000000000002775... and the smallest Nat at or above it is 51.
-    assert FinancialMath.multiplyNatByFloatMax(4_000, 0.0125) == 51;
-    // 0.015625 is 2 ** -6, so this product is exact and nothing is rounded up.
-    assert FinancialMath.multiplyNatByFloatMax(4_096, 0.015_625) == 64;
-    assert FinancialMath.multiplyNatByFloatMax(100, 1.0) == 100;
-    assert FinancialMath.multiplyNatByFloatMax(0, 1.5) == 0;
-  },
-);
-
-test(
-  "multiplyNatByFloatMax: never rounds below the exact product",
-  func() {
-    // 3 * 0.5 = 1.5, ceiled to 2.
-    assert FinancialMath.multiplyNatByFloatMax(3, 0.5) == 2;
-    // 7 * (1 / 3) = 2.33..., ceiled to 3.
-    assert FinancialMath.multiplyNatByFloatMax(7, 1.0 / 3.0) == 3;
-  },
-);
-
-test(
   "multiplyNatByFloatMax: never rounds below the exact product for big numbers",
   func() {
     let n : Nat = 50_000_000_000_000_000_000;
@@ -77,6 +260,9 @@ test(
 
     let res = FinancialMath.multiplyNatByFloatMax(n, f);
     assert res >= n * 1000;
+    // The Float product lands 4_194_304 below the exact one, and a ceiling
+    // cannot recover that because the rounded product is already an integer.
+    assert res == n * 1000;
   },
 );
 
@@ -91,6 +277,7 @@ test(
 
     let res = FinancialMath.multiplyNatByFloatMin(n, f);
     assert res <= n * 1000;
+    assert res == n * 1000;
   },
 );
 
@@ -104,6 +291,66 @@ test(
 
     assert FinancialMath.multiplyNatByFloatMin(n, 1_000.0) == exact;
     assert FinancialMath.multiplyNatByFloatMax(n, 1_000.0) == exact;
+    // The double for 0.0125 is 3_602_879_701_896_397 / 2 ** 58, which divides
+    // 2 ** 60 exactly, so this product is integral too.
+    let big : Nat = 1_152_921_504_606_846_976; // 2 ** 60
+    assert FinancialMath.multiplyNatByFloatMin(big, 0.0125) == 14_411_518_807_585_588;
+    assert FinancialMath.multiplyNatByFloatMax(big, 0.0125) == 14_411_518_807_585_588;
+  },
+);
+
+test(
+  "exact path: values far above 2 ** 53 are still bounded to one unit",
+  func() {
+    let n : Nat = 1_000_000_000_000_000_000_000_000_000_000; // 10 ** 30
+    // 10 ** 30 * 0.012500000000000000693... is
+    // 12_500_000_000_000_000_693_889_390_390.7..., which neither operand nor
+    // product could come anywhere near expressing as a Float.
+    assert FinancialMath.multiplyNatByFloatMin(n, 0.0125) == 12_500_000_000_000_000_693_889_390_390;
+    assert FinancialMath.multiplyNatByFloatMax(n, 0.0125) == 12_500_000_000_000_000_693_889_390_391;
+  },
+);
+
+test(
+  "exact path: a tiny multiplier keeps the low-order bits of a big value",
+  func() {
+    let big : Nat = 1_152_921_504_606_846_977; // 2 ** 60 + 1
+    // The value alone is above the limit, so the product is evaluated exactly
+    // even though it is small — the trailing 1 would otherwise be lost when
+    // converting the value to a Float.
+    assert FinancialMath.multiplyNatByFloatMin(big, 1.0) == big;
+    assert FinancialMath.multiplyNatByFloatMax(big, 1.0) == big;
+    // 1e-10 is 7_378_697_629_483_821 / 2 ** 86, so the exact product is
+    // 115_292_150.46...
+    assert FinancialMath.multiplyNatByFloatMin(big, 1.0e-10) == 115_292_150;
+    assert FinancialMath.multiplyNatByFloatMax(big, 1.0e-10) == 115_292_151;
+  },
+);
+
+test(
+  "exact path: a zero multiplier gives zero for any value",
+  func() {
+    let n : Nat = 1_000_000_000_000_000_000_000_000_000_000; // 10 ** 30
+    assert FinancialMath.multiplyNatByFloatMin(n, 0.0) == 0;
+    assert FinancialMath.multiplyNatByFloatMax(n, 0.0) == 0;
+  },
+);
+
+test(
+  "exact path: a negative multiplier returns the magnitude of the product",
+  func() {
+    // The exact product is 33_900_000_000_000_002_353.6..., so its floor is
+    // ...353 and its ceiling ...354. Negating swaps them: `min` floors -x,
+    // which rounds the magnitude up, and `max` ceils it, rounding down.
+    let n : Nat = 50_000_000_000_000_000_000;
+    assert FinancialMath.multiplyNatByFloatMin(n, 0.678) == 33_900_000_000_000_002_353;
+    assert FinancialMath.multiplyNatByFloatMax(n, 0.678) == 33_900_000_000_000_002_354;
+    assert FinancialMath.multiplyNatByFloatMin(n, -0.678) == 33_900_000_000_000_002_354;
+    assert FinancialMath.multiplyNatByFloatMax(n, -0.678) == 33_900_000_000_000_002_353;
+    // An integral product is not moved in either direction.
+    let big : Nat = 1_152_921_504_606_846_976; // 2 ** 60
+    assert FinancialMath.multiplyNatByFloatMin(big, -0.5) == 576_460_752_303_423_488;
+    assert FinancialMath.multiplyNatByFloatMax(big, -0.5) == 576_460_752_303_423_488;
   },
 );
 
@@ -119,26 +366,59 @@ test(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Properties that hold in both regimes
+// ---------------------------------------------------------------------------
+
+// Values and prices spanning both regimes: below the limit, straddling it, and
+// far above it, with exact, decimal and tiny multipliers.
+let bothRegimes : [(Nat, Float)] = [
+  (0, 0.0),
+  (10, 0.0),
+  (3, 0.5),
+  (7, 1.0 / 3.0),
+  (4_000, 0.0125),
+  (12_345, 0.678),
+  (9_007_199_254_740_991, 1.0),
+  (9_007_199_254_740_991, 3.0),
+  (9_007_199_254_740_992, 1.5),
+  (9_007_199_254_740_993, 0.5),
+  (1_152_921_504_606_846_976, 0.0125),
+  (1_152_921_504_606_846_977, 1.0e-10),
+  (50_000_000_000_000_000_000, 0.678),
+  (50_000_000_000_000_000_000, 1_000.0),
+  (1_000_000_000_000_000_000_000_000_000_000, 0.1),
+];
+
 test(
-  "a negative multiplier returns the magnitude of the rounded product",
+  "min never exceeds max, and never by more than one unit",
   func() {
-    // floor(-1.5) == -2 and ceil(-1.5) == -1.
-    assert FinancialMath.multiplyNatByFloatMin(3, -0.5) == 2;
-    assert FinancialMath.multiplyNatByFloatMax(3, -0.5) == 1;
+    for ((value, price) in bothRegimes.vals()) {
+      let lo = FinancialMath.multiplyNatByFloatMin(value, price);
+      let hi = FinancialMath.multiplyNatByFloatMax(value, price);
+      assert lo <= hi;
+      assert hi <= lo + 1;
+    };
   },
 );
 
 test(
-  "min and max bracket the exact product",
+  "negating the multiplier swaps the two bounds",
   func() {
-    let value : Nat = 12_345;
-    let price = 0.678;
-    let lo = FinancialMath.multiplyNatByFloatMin(value, price);
-    let hi = FinancialMath.multiplyNatByFloatMax(value, price);
-    assert lo <= hi;
-    assert hi <= lo + 1;
+    for ((value, price) in bothRegimes.vals()) {
+      let lo = FinancialMath.multiplyNatByFloatMin(value, price);
+      let hi = FinancialMath.multiplyNatByFloatMax(value, price);
+      // The magnitude of the product is unchanged, but flooring and ceiling
+      // trade places, so the bounds come back in the opposite order.
+      assert FinancialMath.multiplyNatByFloatMin(value, -price) == hi;
+      assert FinancialMath.multiplyNatByFloatMax(value, -price) == lo;
+    };
   },
 );
+
+// ---------------------------------------------------------------------------
+// scaleFloat
+// ---------------------------------------------------------------------------
 
 test(
   "scaleFloat: zero decimals is identity",

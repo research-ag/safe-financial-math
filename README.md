@@ -43,10 +43,12 @@ means a canister can pay out more than it took in and drain its own reserves.
 This package makes the rounding direction explicit and bounds it safely:
 
 - multiply-and-**floor** for amounts you pay out (never overpay), and
-- multiply-and-**ceil** for amounts you collect or require (never undercharge),
+- multiply-and-**ceil** for amounts you collect or require (never undercharge).
 
-by evaluating the product in exact, unbounded integer arithmetic instead of in
-floating point, so the bound holds for operands of any magnitude.
+While the product stays below `2 ** 53`, where every integer is still
+representable, the `Float` result is at most one unit away from the exact product
+and rounding it is enough. Above `2 ** 53` the product is evaluated in exact,
+unbounded integer arithmetic instead, so the bound holds at any magnitude.
 
 ### Interface
 
@@ -147,9 +149,8 @@ import FinancialMath "mo:safe-financial-math";
 let payout = FinancialMath.multiplyNatByFloatMin(4_000, 0.0125); // 50
 
 // Use the ceiling variant for a required deposit so the canister never
-// undercharges. The closest double to 0.0125 is 0.012500000000000000693..., so
-// the exact product is 50.000000000000002775... and the ceiling is 51.
-let required = FinancialMath.multiplyNatByFloatMax(4_000, 0.0125); // 51
+// undercharges.
+let required = FinancialMath.multiplyNatByFloatMax(4_000, 0.0125); // 50
 
 // Convert a human price into a token's raw integer scale (8 decimals).
 let scaled = FinancialMath.scaleFloat(0.0125, 8); // 1_250_000.0
@@ -208,22 +209,33 @@ npx -y prettier --plugin prettier-plugin-motoko --check '**/*.{mo,json,md}'
 
 ## Design
 
-`multiplyNatByFloatMin` and `multiplyNatByFloatMax` do not multiply in floating
-point at all. Every finite `Float` is a dyadic rational, i.e. it denotes exactly
-`numerator / 2 ** k` for some integers `numerator` and `k`, and that pair can be
-recovered without losing a bit by doubling the `Float` until it becomes integral.
-The functions then compute `value * numerator` and divide by `2 ** k` on
-unbounded `Nat`s, rounding the quotient down (`Min`) or up (`Max`). Both results
-are therefore exact bounds on the mathematical product for operands of any
-magnitude, whereas a `Float` multiplication rounds its result to nearest and so
-can land on the wrong side of the product as soon as the product exceeds
-`2 ** 53`.
+`multiplyNatByFloatMin` and `multiplyNatByFloatMax` pick their strategy from the
+magnitude of the product.
 
-Note that the bound is on the product of `value` and the `Float`'s own value,
-which is itself only the closest double to the decimal a caller writes: `0.0125`
-denotes `0.012500000000000000693...`, so `multiplyNatByFloatMax(4_000, 0.0125)`
-is `51`, not `50`. Reach for `DecimalNat`/`DecimalInt` when the multiplier itself
-must be an exact decimal.
+**Products below `2 ** 53`** are computed as `Float`s and then floored or
+ceiled, which is what the two functions have always done. Every integer in that
+range is representable, and `value` is converted exactly, so the `Float` product
+is off by less than one unit and the rounding step absorbs the error. It also
+absorbs the error in the multiplier itself, which matters in practice: the double
+nearest `0.0125` is `0.012500000000000000693...`, so a _strict_ ceiling of
+`4_000 * 0.0125` would be `51`, and this path returns the expected `50`. The
+price of that convenience is that below `2 ** 53` the result can be one unit off
+the exact product — reach for `DecimalNat`/`DecimalInt` when the multiplier has
+to be an exact decimal and even a single unit must not be lost.
+
+**Products at or above `2 ** 53`** cannot be handled that way: integers are no
+longer all representable, so a rounding error is no longer bounded by one unit,
+and both the conversion of `value` and the multiplication round to nearest — in
+whichever direction happens to be closer, including the unsafe one. Multiplying
+`50_000_000_000_000_000_000` by `1_000.0` in `Float`, for instance, lands
+4_194_304 _below_ the exact product, and a `ceil` cannot recover that because the
+result is already an integer. So above the limit the product is instead evaluated
+exactly: every finite `Float` is a dyadic rational, i.e. it denotes exactly
+`numerator / 2 ** k` for integers `numerator` and `k`, and that pair is recovered
+without losing a bit by doubling the `Float` until it becomes integral. The
+functions then compute `value * numerator` on unbounded `Nat`s and shift right by
+`k`, rounding the quotient down (`Min`) or up (`Max`). Those results are exact
+bounds on the mathematical product for operands of any size.
 
 `intToFloatFloor` is a standalone helper for the reverse direction — getting a
 `Nat` into a `Float` without the conversion rounding it up. It right-shifts
@@ -249,6 +261,9 @@ approximate quotient is needed.
 
 - `multiplyNatByFloatMin` and `multiplyNatByFloatMax` trap if `multiplier` is
   `NaN` or infinite (neither denotes a rational number).
+- Their results are exact bounds on the mathematical product once the product
+  reaches `2 ** 53`; below that they can be one unit off it, in exchange for
+  tolerating the representation error of a decimal multiplier.
 - A negative `multiplier` returns the absolute value of the rounded product.
 - `scaleFloat` never traps.
 - In the `DecimalInt` module every operation is total. In `DecimalNat` every
