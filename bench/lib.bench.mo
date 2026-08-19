@@ -7,13 +7,22 @@ module {
   public func init() : Bench.V1 {
     let schema : Bench.Schema = {
       name = "Safe financial math";
-      description = "Precision-safe Nat-by-Float multiplication and decimal scaling, 1_000 calls per cell.";
-      rows = ["multiplyNatByFloatMin", "multiplyNatByFloatMax", "scaleFloat"];
-      // The multiplication helpers round the Float product while the value and
-      // the product both stay below 2 ** 53, and evaluate it exactly on
-      // unbounded Nats above that. "small" measures the first regime, "big" and
-      // "huge" the second one at two operand sizes, and the sign of the price
-      // selects which way the magnitude is rounded.
+      description = "Nat-by-Float multiplication (plain and precision-safe) and decimal scaling, 1_000 calls per cell.";
+      rows = [
+        "multiplyNatByFloatMin",
+        "multiplyNatByFloatMax",
+        "multiplyNatByFloatMinSafe",
+        "multiplyNatByFloatMaxSafe",
+        "scaleFloat",
+      ];
+      // multiplyNatByFloatMin/Max always round a plain Float product, so their
+      // cost does not depend on operand size. multiplyNatByFloatMinSafe/MaxSafe
+      // additionally round the Float product while the value and the product
+      // both stay below 2 ** 53, and evaluate it exactly on unbounded Nats
+      // above that. "small" measures the first (and only, for the plain
+      // functions) regime, "big" and "huge" the exact-arithmetic fallback at
+      // two operand sizes, and the sign of the price selects which way the
+      // magnitude is rounded.
       cols = ["small +", "small -", "big +", "big -", "huge +", "huge -"];
     };
 
@@ -41,6 +50,16 @@ module {
         case (1) {
           for (_ in Nat.range(0, iterations)) {
             ignore FinancialMath.multiplyNatByFloatMax(value, price);
+          };
+        };
+        case (2) {
+          for (_ in Nat.range(0, iterations)) {
+            ignore FinancialMath.multiplyNatByFloatMinSafe(value, price);
+          };
+        };
+        case (3) {
+          for (_ in Nat.range(0, iterations)) {
+            ignore FinancialMath.multiplyNatByFloatMaxSafe(value, price);
           };
         };
         // scaleFloat takes no Nat, so it only varies with the price and is

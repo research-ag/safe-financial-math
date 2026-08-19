@@ -3,19 +3,23 @@
 ## 0.0.1
 
 - initial version
-- `multiplyNatByFloatMin`: precision-safe Nat-by-Float multiplication with
-  flooring
-- `multiplyNatByFloatMax`: precision-safe Nat-by-Float multiplication with
-  ceiling
-- both switch to exact integer arithmetic once the product reaches `2 ** 53`,
-  where `Float` can no longer represent every integer and rounding to nearest
-  can land arbitrarily far on the unsafe side of the product: the multiplier is
-  decomposed into the fraction `numerator / 2 ** k` it denotes and the product
-  is evaluated on unbounded `Nat`s. Below `2 ** 53` the `Float` product is
-  rounded as before, which keeps the representation error of a decimal
-  multiplier from costing a unit (`multiplyNatByFloatMax(4_000, 0.0125)` is
-  `50`, not `51`) at the cost of the result being up to one unit off the exact
-  product
+- `multiplyNatByFloatMin`: Nat-by-Float multiplication with flooring, rounding
+  a plain `Float` product
+- `multiplyNatByFloatMax`: Nat-by-Float multiplication with ceiling, rounding a
+  plain `Float` product
+- both keep the representation error of a decimal multiplier from costing a
+  unit (`multiplyNatByFloatMax(4_000, 0.0125)` is `50`, not `51`) at the cost
+  of the result being up to one unit off the exact product; both are a safe
+  bound only while `value` and the product stay below `2 ** 53`, above which
+  the `Float` product can drift from the exact product by more than one unit
+- `multiplyNatByFloatMinSafe` / `multiplyNatByFloatMaxSafe`: precision-safe
+  counterparts that behave identically to `multiplyNatByFloatMin` /
+  `multiplyNatByFloatMax` below `2 ** 53`, but switch to exact integer
+  arithmetic once the product reaches that limit, where `Float` can no longer
+  represent every integer and rounding to nearest can land arbitrarily far on
+  the unsafe side of the product: the multiplier is decomposed into the
+  fraction `numerator / 2 ** k` it denotes and the product is evaluated on
+  unbounded `Nat`s, so the result is a safe bound at any magnitude
 - `scaleFloat`: scale a Float by a power of ten
 - `DecimalInt` module: arbitrary-precision, `Int`-backed decimal type
   (`value * 10 ** (-decimals)`) with exact `add`/`sub`/`mul`, `neg`/`abs`
