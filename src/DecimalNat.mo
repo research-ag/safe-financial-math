@@ -87,10 +87,42 @@ module {
     { value = value; decimals = decimals };
   };
 
+  /// Constructs a `DecimalNat` from a non-negative `Float`, keeping exactly
+  /// `digits` significant decimal digits.
+  ///
+  /// `f` is treated as the decimal number closest to its exact binary value —
+  /// not as the shorter decimal a human may have written — so the result
+  /// reproduces `f`'s own digits: `fromFloat(0.1, 3)` returns `(100, 3)`
+  /// (`0.100`), the significant digits of the double nearest `0.1`, not some
+  /// "nicer" alternative. Digits beyond roughly the double's own 15-17
+  /// significant digits reflect that binary representation error rather than
+  /// genuine precision, so keep `digits` within that range when it matters.
+  /// Any digits past the requested `digits` are truncated, not rounded to the
+  /// nearest value.
+  ///
+  /// `digits` counts significant digits, not decimal places, so it does not
+  /// bound the magnitude of `f`: `fromFloat(1_000_000_000.0, 5)` keeps all 5
+  /// requested digits and represents the trailing zeros with a negative
+  /// `decimals` instead of dropping them. A `digits` of `0` keeps none and
+  /// always returns `0`. `f == 0.0` is a special case for the same reason —
+  /// it has no significant digits to count from — and always returns `0`
+  /// regardless of `digits`.
+  ///
+  /// Example:
+  /// ```motoko include=import
+  /// let a = DecimalNat.fromFloat(1.23, 3); // 1.23
+  /// let b = DecimalNat.fromFloat(10_234.5678, 9); // 10234.5678
+  /// let c = DecimalNat.fromFloat(1_000_000_000.0, 5); // 1_000_000_000, as 10_000 * 10 ** 5
+  /// let d = DecimalNat.fromFloat(0.0, 5); // 0
+  /// ```
+  ///
+  /// Traps if `f` is negative, `NaN`, or infinite: neither `NaN` nor an
+  /// infinity denotes a decimal number at all.
   public func fromFloat(f : Float, digits : Nat) : DecimalNat {
     if (f < 0.0) {
       Runtime.trap("DecimalNat.fromFloat: negative float");
     };
+    if (f == 0) return new(0, 0);
     let div = if (f > 1 or f < -1) {
       2.302_585_092_994_045_6;
     } else {

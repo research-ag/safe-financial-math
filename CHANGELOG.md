@@ -28,6 +28,15 @@
 - `DecimalNat` module: the non-negative, `Nat`-backed counterpart with exact
   `add`/`sub` (traps on underflow)/`mul`, `compare`/`equal`, and
   `floor`/`ceil`/`round`/`toFloat`/`toText` conversions
+- `DecimalInt.fromFloat` / `DecimalNat.fromFloat`: construct a decimal from a
+  `Float` by keeping exactly `digits` significant decimal digits of it,
+  reproducing the double's own digits rather than rounding to the nearest
+  value or recovering the shorter decimal a human may have written; this pays
+  the `Float` imprecision once, at the boundary, rather than compounding it
+  across every subsequent exact operation. `f == 0.0` (or `-0.0`) always
+  returns `0`, regardless of `digits`. Traps on `NaN` or infinite `f` (neither
+  denotes a decimal number), and `DecimalNat.fromFloat` additionally traps on
+  a negative `f`
 - `floor` rounds towards negative infinity and `ceil` towards positive
   infinity, so in `DecimalInt` the direction is relative to the number line and
   not to zero (`floor(-1.75)` is `-2`, `ceil(-1.75)` is `-1`)

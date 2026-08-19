@@ -96,6 +96,7 @@ module {
 
   public func new(value : Int, decimals : Int) : DecimalInt;
   public func fromInt(n : Int) : DecimalInt;
+  public func fromFloat(f : Float, digits : Nat) : DecimalInt; // f's own digits, not rounded to nearest
 
   public func add(a : DecimalInt, b : DecimalInt) : DecimalInt; // exact
   public func sub(a : DecimalInt, b : DecimalInt) : DecimalInt; // exact
@@ -125,6 +126,7 @@ module {
 
   public func new(value : Nat, decimals : Int) : DecimalNat;
   public func fromNat(n : Nat) : DecimalNat;
+  public func fromFloat(f : Float, digits : Nat) : DecimalNat; // f's own digits, not rounded to nearest; traps if f < 0
 
   public func add(a : DecimalNat, b : DecimalNat) : DecimalNat; // exact
   public func sub(a : DecimalNat, b : DecimalNat) : DecimalNat; // exact, traps on underflow
@@ -193,6 +195,12 @@ let total = DecimalNat.mul(price, qty); // 4920.00
 
 let owed = DecimalNat.round(total); // 4920
 let shown = DecimalNat.toText(total); // "4920.00"
+
+// Pin a Float price to a fixed number of significant decimal digits, once,
+// at the boundary where it enters exact arithmetic. fromFloat keeps the
+// double's own digits rather than rounding to the nearest value, so pick
+// enough digits to cover the precision that matters.
+let clearingPrice = DecimalNat.fromFloat(0.0125, 3); // 0.0125
 
 ```
 
@@ -288,6 +296,26 @@ Division is deliberately omitted, as the quotient is not, in general,
 representable exactly in base ten — convert to `Float` with `toFloat` when an
 approximate quotient is needed.
 
+`fromFloat(f, digits)` is the entry point from `Float`: it keeps exactly
+`digits` significant decimal digits of `f` and returns them as an exact
+decimal, so every arithmetic operation from that point on is exact — the
+`Float` imprecision is paid once, at the boundary, rather than compounding
+across every subsequent operation. It reproduces `f`'s own digits rather than
+rounding to the nearest value or recovering the shorter decimal a human may
+have written: the double nearest `0.1` is `0.1000000000000000055...`, so
+`fromFloat(0.1, 3)` returns `(100, 3)` (`0.100`), the first three digits of
+that double, not a special-cased `0.1`. That also means digits past the
+double's own precision (roughly 15-17 significant digits) reflect
+representation error rather than the value the caller intended, so `digits`
+should stay within the range that is actually meaningful for a given `f`.
+`digits` counts significant digits rather than decimal places, so a whole
+number like `1_000_000_000.0` at `digits = 5` keeps all 5 digits and pushes
+the rest into a negative `decimals` instead of losing them. `f == 0.0` (or
+`-0.0`) is a special case handled the same way as `digits = 0`, since it has
+no significant digits to count from either: it always returns `0`, regardless
+of `digits`. `DecimalNat.fromFloat` traps on a negative `f`, and both trap on
+`NaN` and infinity, neither of which denotes a decimal number at all.
+
 Both modules convert to an integer with three explicitly directed roundings, so
 the direction is a choice at the call site rather than a property of the
 representation: `floor` towards negative infinity (the safe payout amount),
@@ -315,9 +343,14 @@ already denotes an integer, so all three return it exactly, without rounding.
 - A negative `multiplier` returns the absolute value of the rounded product,
   for all four functions.
 - `scaleFloat` never traps.
-- In the `DecimalInt` module every operation is total. In `DecimalNat` every
-  operation is total except `sub`, which traps when the result would be negative
-  (a `Nat` cannot be negative).
+- In the `DecimalInt` module every operation is total except `fromFloat`,
+  which traps on `NaN` or infinite `f`. In `DecimalNat` every operation is
+  total except `sub`, which traps when the result would be negative (a `Nat`
+  cannot be negative), and `fromFloat`, which additionally traps on a
+  negative `f`.
+- `fromFloat` truncates any digits past the requested `digits`, rather than
+  rounding to the nearest value, and returns `0` for `f == 0.0` (or `-0.0`)
+  regardless of `digits`.
 
 ## Copyright
 

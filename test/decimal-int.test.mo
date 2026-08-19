@@ -23,6 +23,9 @@ test(
 
     let c = DecimalInt.fromFloat(1_000_000_000.0, 5);
     assert c.value == 10_000 and c.decimals == -5;
+
+    let d = DecimalInt.fromFloat(0.0, 5);
+    assert d.value == 0 and d.decimals == 0;
   },
 );
 
